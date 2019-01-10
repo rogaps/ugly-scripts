@@ -1,0 +1,85 @@
+#!/usr/bin/env sh
+
+# $1 lock file
+function set_lockfile()
+{
+    set -o noclobber
+    printf $PPID > "$1" 2>/dev/null && return 0
+
+    locked_pid=$(< "$1")
+    [ $locked_pid -gt "0" ] || return 1
+    kill -0 $locked_pid 2>/dev/null && return 1
+    
+    rm "$1" 2>/dev/null
+    printf "$PPID" > "$1" 2>/dev/null && return 0
+    return 1
+}
+
+# $1 timeout
+# $2 lock file
+function set_lockfile_wait()
+{
+    declare -ir start_time=$(date '+%s')
+    declare -ir timeout="${1:-0}"
+
+    while ! set_lockfile "$2" 2>/dev/null
+    do
+        if [ $(($(date '+%s') - $start_time)) -ge $timeout ] ; then
+            printf "Error: waited too long for lock file %s\n" "$2" 1>&2
+            return 1
+        fi
+        sleep 1
+    done
+
+    return 0
+}
+
+# $1 lock file
+function release_lockfile()
+{
+    [ -e "$1" ] && grep -Fxq $PPID "$1" && rm -f "$1"
+}
+
+function print_usage()
+{
+    printf "%s [-h][-t n][-u] <lock file>\n" $(basename "$0")
+}
+
+POSITIONAL=()
+while [[ $# -gt 0 ]]
+do
+    key="$1"
+
+    case $key in
+        -h|--help)
+            print_usage
+            exit 0
+            ;;
+        -t|--timeout)
+            declare -ir TIMEOUT=$2
+            shift
+            shift
+            ;;
+        -u|--unlock)
+            UNLOCK=true
+            shift
+            ;;
+        *)
+            POSITIONAL+=("$1")
+            shift
+            ;;
+    esac
+done
+set -- "${POSITIONAL[@]}"
+
+if [ "$UNLOCK" = true ]
+then
+    release_lockfile "$1"
+    exit 0
+fi
+
+if ! set_lockfile_wait ${TIMEOUT:-0} "$1"  ; then
+    exit 1
+fi
+
+exit 0
