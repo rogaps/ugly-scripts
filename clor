@@ -1,0 +1,61 @@
+#!/usr/bin/env sh
+#
+# Add colors to strings.
+# Usage:
+#   tail -F /var/log/some.log | clor Some Text
+
+ESC="$(printf '\033')"
+
+show_help() {
+  cat <<EOF
+Usage:
+  clor [opts] [texts ... ]
+EOF
+}
+
+create_sedexp() {
+  printf "%q" "s/($1)/${ESC}[1;3$2m\1${ESC}[0m/g"
+}
+
+main() {
+  local params sed_cmd iter sed_exp
+  params=()
+  sed_cmd="sed"
+
+  while (( "$#" )); do
+    case "$1" in
+      -h|--help)
+        show_help
+        exit 0
+        ;;
+      --)
+        shift
+        for param; do
+          params+=("$param")
+        done
+        break
+        ;;
+      --*)
+        echo "Error: Unsupported flag $1" >&2
+        exit 1
+        ;;
+      *)
+        params+=("$1")
+        shift
+        ;;
+    esac
+  done
+
+  set -- "${params[@]}"
+
+  iter=0
+  for param; do
+    sed_exp="$(create_sedexp "$param" "$(($iter%6+1))")"
+    sed_cmd="${sed_cmd} -E -e ${sed_exp}"
+    iter=$(($iter+1))
+  done
+
+  eval "$sed_cmd"
+}
+
+main "$@" || exit $?
